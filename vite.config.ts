@@ -5,9 +5,6 @@ import { readFileSync } from 'fs'
 const packageJson = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf-8'))
 const version = packageJson.version
 
-// 自定义插件：在构建完成后复制文件
-
-
 export default defineConfig({
     plugins: [
     ],
@@ -37,7 +34,16 @@ export default defineConfig({
             }
         },
         // 清理输出目录
-        emptyOutDir: true
+        emptyOutDir: true,
+        // 压缩配置
+        minify: 'terser',
+        terserOptions: {
+            compress: {
+                drop_console: true,  // 移除 console
+                drop_debugger: true  // 移除 debugger
+            },
+
+        }
     },
     // 开发服务器配置（可选）
     server: {

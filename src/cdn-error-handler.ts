@@ -446,7 +446,7 @@ function testCdnAvailability(callback: Function) {
  * 因此需要配合预检测机制使用
  */
 function initErrorListener() {
-    document.addEventListener('error', function (e) {
+    window.addEventListener('error', function (e) {
         const target = e.target;
         if (!(target instanceof Element)) {
             return
