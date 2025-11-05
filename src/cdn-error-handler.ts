@@ -648,9 +648,9 @@ function executeReplaceAll() {
  * @param {number} options.testTimeout - CDN 测试超时时间（毫秒），默认: 3000
  * @param {string} options.testImagePath - CDN 测试图片路径，默认: '/new/img/logo.5d2411d5.png'
  */
-function init(options: RsRetryCongfig) {
+function init(options?: RsRetryCongfig) {
     // 合并配置
-    config = Object.assign(config, options || {});
+    config = Object.assign(config, options);
 
     // 如果没有指定 fallbackDomain，使用默认值
     if (!config.fallbackDomain && typeof location !== 'undefined') {
