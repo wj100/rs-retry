@@ -40,7 +40,6 @@ build:
     - uname -a
     - \. "$HOME/.nvm/nvm.sh"
     - echo $PATH
-    - nvm install v22
     - nvm use v22
     - node -v
     - npm install
