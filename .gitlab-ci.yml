@@ -163,7 +163,7 @@ deploy-gy-dev-07:
     - /^bugfix\/.*$/
 
 #打包提交发布库
-publish-online:
+publish-online-mimg:
   stage: publish
   script:
     - pwd
