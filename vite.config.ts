@@ -22,7 +22,7 @@ export default defineConfig({
             fileName: (format) => {
                 return `rs-retry.${version}.${format}.js`
             },
-            formats: ['umd'] // 可以同时生成多种格式
+            formats: ['umd', 'iife'] // 可以同时生成多种格式
         },
         rollupOptions: {
             // 确保外部化处理那些你不想打包进库的依赖

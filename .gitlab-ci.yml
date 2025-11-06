@@ -2,19 +2,24 @@ variables:
   #变量尽量定义在最前面，方便不同工程的修改
   APP_NAME: 'rs-retry'
   STATIC_APP_NAME: 'mimg/external/lib/rs-retry'
+  STATIC_APP_NAME_OFFICIAL_PATH: 'lib/rs-retry'
   TARGET_DIR: 'dist'
   BUILD_CMD: 'npm run build'
   RELEASE_GITADDR: 'ssh://git@g.hz.netease.com:22222/qiye/release/mimg.git'
+  RELEASE_OFFICAIL_GITADDR: 'ssh://git@g.hz.netease.com:22222/qiye/release/qiye-official.git'
   #环境定义：dev-开发，test-测试，online-线上打包环境
   #不同环境下运行runner的账号目录
   DEV_USREDIR: '/home/appops/'
   TEST_USERDIR: '/home/appops/'
   #各个环境下应用的部署目录，打包环境可不用
+  DEV_OFFICIAL_DEPLOYDIR: '/data/qiye.163.com/'
+  TEST_OFFICIAL_DEPLOYDIR: '/data/qiye.163.com/'
   DEV_DEPLOYDIR: '/data/webroot/static/'
   TEST_DEPLOYDIR: '/data/webroot/static/'
   #本地发布目录
   DEPLOY_BASE_DIR: '/home/appops/pre-publish'
-
+  #初始化official本地发布目录
+  INIT_DEPLOY_OFFICIAL_DIR_CMD: 'git clone $RELEASE_GITADDR $APP_NAME && cd $APP_NAME && ls -a && git config user.email "qiye_deploy@corp.netease.com" && git config user.name "qiye_deploy"'
   #初始化本地发布目录
   INIT_DEPLOY_DIR_CMD: 'git clone $RELEASE_GITADDR $APP_NAME && cd $APP_NAME && ls -a && git config user.email "qiye_deploy@corp.netease.com" && git config user.name "qiye_deploy"'
   #获取项目最后提交说明
@@ -66,7 +71,9 @@ deploy-test-2:
   - pwd
   - mkdir -p $TEST_DEPLOYDIR$STATIC_APP_NAME
   - rsync -av $TARGET_DIR/ $TEST_DEPLOYDIR$STATIC_APP_NAME
-  # - $RESTAR_TOMCAT_CMD
+  # 同时部署到qiye.163.com
+  - mkdir -p $DEV_OFFICIAL_DEPLOYDIR$STATIC_APP_NAME_OFFICIAL_PATH
+  - rsync -av  $TARGET_DIR/ $DEV_OFFICIAL_DEPLOYDIR$STATIC_APP_NAME_OFFICIAL_PATH
   tags:
   - qiye-test-2-hz
   environment:
@@ -170,7 +177,31 @@ publish-online:
     - else
     - cd $APP_NAME && git pull && ls -a
     - fi
-    - rsync -av --exclude '.git' $currentPath/$TARGET_DIR/ ./external/lib/nos-upload-helper
+    - rsync -av --exclude '.git' $currentPath/$TARGET_DIR/ ./external/lib/rs-retry
+    - git add -A && git commit -m "$commit_msg" && git push origin master
+  tags:
+    - qiye-online-runner #按需修改
+  when: manual
+  environment:
+    name: online
+  only:
+    - release
+    - master
+
+publish-online-official:
+  stage: publish
+  script:
+    - pwd
+    - currentPath=$(pwd)
+    - ls -lh $currentPath/$TARGET_DIR/
+    - commit_msg=$($COMMIT_LOG_CMD) && echo $commit_msg
+    - mkdir -p $DEPLOY_BASE_DIR && cd $DEPLOY_BASE_DIR
+    - if [ ! -d "$APP_NAME" ];then
+    - eval $INIT_DEPLOY_OFFICIAL_DIR_CMD
+    - else
+    - cd $APP_NAME && git pull && ls -a
+    - fi
+    - rsync -av --exclude '.git' $currentPath/$TARGET_DIR/ ./js/rs-retry
     - git add -A && git commit -m "$commit_msg" && git push origin master
   tags:
     - qiye-online-runner #按需修改
