@@ -2,7 +2,7 @@ variables:
   #变量尽量定义在最前面，方便不同工程的修改
   APP_NAME: 'rs-retry'
   STATIC_APP_NAME: 'mimg/external/lib/rs-retry'
-  STATIC_APP_NAME_OFFICIAL_PATH: 'lib/rs-retry'
+  STATIC_APP_NAME_OFFICIAL_PATH: 'js/rs-retry'
   TARGET_DIR: 'dist'
   BUILD_CMD: 'npm run build'
   RELEASE_GITADDR: 'ssh://git@g.hz.netease.com:22222/qiye/release/mimg.git'
@@ -12,7 +12,6 @@ variables:
   DEV_USREDIR: '/home/appops/'
   TEST_USERDIR: '/home/appops/'
   #各个环境下应用的部署目录，打包环境可不用
-  DEV_OFFICIAL_DEPLOYDIR: '/data/qiye.163.com/'
   TEST_OFFICIAL_DEPLOYDIR: '/data/qiye.163.com/'
   DEV_DEPLOYDIR: '/data/webroot/static/'
   TEST_DEPLOYDIR: '/data/webroot/static/'
@@ -72,8 +71,8 @@ deploy-test-2:
   - mkdir -p $TEST_DEPLOYDIR$STATIC_APP_NAME
   - rsync -av $TARGET_DIR/ $TEST_DEPLOYDIR$STATIC_APP_NAME
   # 同时部署到qiye.163.com
-  - mkdir -p $DEV_OFFICIAL_DEPLOYDIR$STATIC_APP_NAME_OFFICIAL_PATH
-  - rsync -av  $TARGET_DIR/ $DEV_OFFICIAL_DEPLOYDIR$STATIC_APP_NAME_OFFICIAL_PATH
+  - mkdir -p $TEST_OFFICIAL_DEPLOYDIR$STATIC_APP_NAME_OFFICIAL_PATH
+  - rsync -av  $TARGET_DIR/ $TEST_OFFICIAL_DEPLOYDIR$STATIC_APP_NAME_OFFICIAL_PATH
   tags:
   - qiye-test-2-hz
   environment:
