@@ -19,7 +19,7 @@ variables:
   #本地发布目录
   DEPLOY_BASE_DIR: '/home/appops/pre-publish'
   #初始化official本地发布目录
-  INIT_DEPLOY_OFFICIAL_DIR_CMD: 'git clone $RELEASE_GITADDR $APP_NAME && cd $APP_NAME && ls -a && git config user.email "qiye_deploy@corp.netease.com" && git config user.name "qiye_deploy"'
+  INIT_DEPLOY_OFFICIAL_DIR_CMD: 'git clone $RELEASE_OFFICAIL_GITADDR $APP_NAME && cd $APP_NAME && ls -a && git config user.email "qiye_deploy@corp.netease.com" && git config user.name "qiye_deploy"'
   #初始化本地发布目录
   INIT_DEPLOY_DIR_CMD: 'git clone $RELEASE_GITADDR $APP_NAME && cd $APP_NAME && ls -a && git config user.email "qiye_deploy@corp.netease.com" && git config user.name "qiye_deploy"'
   #获取项目最后提交说明
