@@ -10,6 +10,9 @@ const RsRetry: RsRetryPublicAPI = {
     get config() {
         return handler.config;
     },
+    get cdnAvailable() {
+        return handler.cdnAvailable;
+    },
 };
 
 export default RsRetry;

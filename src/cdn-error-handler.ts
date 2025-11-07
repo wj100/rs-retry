@@ -35,7 +35,10 @@
 
 import defaultConfig from "./defConfig";
 
+type NullableBoolean = boolean | null;
+
 let config: RsRetryConfig = { ...defaultConfig };
+let cdnAvailable: NullableBoolean = null;
 let initialized = false;
 
 // ==================== 工具函数 ====================
@@ -428,10 +431,10 @@ function replaceAllCdnResources() {
  */
 function testCdnAvailability(callback: (isAvailable: boolean) => void) {
     if (!config.testImagePath) {
-        config.cdnAvailable = true;
+        cdnAvailable = true;
     }
-    if (config.cdnAvailable !== null) {
-        callback(config.cdnAvailable);
+    if (cdnAvailable !== null) {
+        callback(cdnAvailable);
         return;
     }
 
@@ -446,7 +449,7 @@ function testCdnAvailability(callback: (isAvailable: boolean) => void) {
         completed = true;
 
         if (timer) clearTimeout(timer);
-        config.cdnAvailable = isAvailable;
+        cdnAvailable = isAvailable;
 
         console.log(isAvailable ? "✅ CDN 可用" : "❌ CDN 不可用");
         callback(isAvailable);
@@ -506,7 +509,7 @@ function initErrorListener() {
  * @param {Element} node - 新添加的元素
  */
 function handleNewElement(node: Element) {
-    if (config.cdnAvailable !== false) return;
+    if (cdnAvailable !== false) return;
 
     if (node.tagName === "IMG" && (node as HTMLImageElement).src && isCdnUrl((node as HTMLImageElement).src)) {
         if (!isElementProcessed(node as HTMLElement, "error")) {
@@ -650,17 +653,17 @@ function executeReplaceAll() {
  * @param {number} options.testTimeout - CDN 测试超时时间（毫秒），默认: 3000
  * @param {string} options.testImagePath - CDN 测试图片路径，默认: '/new/img/logo.5d2411d5.png'
  */
-function init(options?: RsRetryInitOptions) {
+function init(options?: Partial<RsRetryConfig>) {
     config = {
         ...defaultConfig,
         ...options,
-        cdnAvailable: null,
     };
 
     if (!config.fallbackDomain && typeof location !== "undefined") {
         config.fallbackDomain = location.origin;
     }
 
+    cdnAvailable = null;
     initialized = true;
 
     initErrorListener();
@@ -694,7 +697,7 @@ function init(options?: RsRetryInitOptions) {
 
         if (typeof window !== "undefined") {
             window.addEventListener("load", () => {
-                if (config.cdnAvailable === false) {
+                if (cdnAvailable === false) {
                     console.log("🔄 window.onload 时再次检查背景图...");
                     const allElements = document.querySelectorAll("*");
                     allElements.forEach((element) => {
@@ -717,7 +720,7 @@ function init(options?: RsRetryInitOptions) {
  */
 function checkElementBackground(element: Element | string) {
     const el = typeof element === "string" ? document.querySelector(element) : element;
-    if (!el || config.cdnAvailable !== false) return;
+    if (!el || cdnAvailable !== false) return;
 
     if (!isElementProcessed(el as HTMLElement, "background")) {
         replaceBackgroundImage(el as HTMLElement);
@@ -779,6 +782,9 @@ const publicAPI: RsRetryPublicAPI = {
     },
     get config() {
         return getConfigSnapshot();
+    },
+    get cdnAvailable() {
+        return cdnAvailable;
     },
 };
 
