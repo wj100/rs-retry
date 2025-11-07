@@ -1,7 +1,42 @@
+/*
+ * @Author: 汪骏
+ * @Date: 2025-10-21 16:07:24
+ * @LastEditors: wangjun
+ * @LastEditTime: 2025-11-05 11:47:07
+ * @Description: CDN 资源降级处理脚本
+ *
+ * 降级逻辑说明：
+ * ============
+ *
+ * 1. 检测机制
+ *    - 页面加载时（DOMContentLoaded）预检测 CDN 可用性
+ *    - 监听全局 error 事件，捕获资源加载失败
+ *    - 使用 MutationObserver 监听动态添加的元素
+ *
+ * 2. 降级策略
+ *    - 如果 CDN 不可用，批量替换所有资源 URL
+ *    - 如果 CDN 可用但单个资源失败，仅替换该资源
+ *
+ * 3. 资源类型处理
+ *    - SCRIPT: 创建新 script 标签，保持 async/defer/type 属性
+ *    - LINK (CSS): 创建新 link 标签，保持 media 属性
+ *    - IMG: 移除 src 后重新设置，处理 <picture> 中的 <source>
+ *    - 背景图: 替换内联样式或计算样式中的 background-image
+ *
+ * 4. 特殊处理
+ *    - bg-lazy 类元素：延迟处理，等待 bg-lazy 类移除后再应用背景图
+ *    - <picture> 元素：同时处理 <source> 标签的 srcset
+ *    - 动态元素：使用 MutationObserver 监听并处理
+ *
+ * 5. URL 转换规则
+ *    - CDN: https://[config.cdnDomain]/path/to/resource
+ *    - 降级: https://[config.fallbackDomain]/path/to/resource
+ */
+
 import defaultConfig from "./defConfig";
 
-let cdnAvailable: null | boolean = null
-let config = defaultConfig;
+let config: RsRetryConfig = { ...defaultConfig };
+let initialized = false;
 
 // ==================== 工具函数 ====================
 
@@ -12,8 +47,8 @@ let config = defaultConfig;
 function getCdnUrlRegex() {
     // 转义特殊字符，生成正则表达式
     // 匹配: (https?:)?//[config.cdnDomain]/
-    const escapedDomain = config.cdnDomain.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return new RegExp('^(https?:)?//' + escapedDomain + '/', 'g');
+    const escapedDomain = config.cdnDomain.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp("^(https?:)?//" + escapedDomain + "/", "g");
 }
 
 /**
@@ -23,7 +58,7 @@ function getCdnUrlRegex() {
 function getCdnBaseUrl() {
     // 从 cdnDomain 生成完整的基础 URL
     // config.cdnDomain -> https://[config.cdnDomain]
-    return 'https://' + config.cdnDomain;
+    return "https://" + config.cdnDomain;
 }
 
 /**
@@ -31,7 +66,7 @@ function getCdnBaseUrl() {
  * @param {string} url - 要检查的 URL
  * @returns {boolean}
  */
-function isCdnUrl(url?: string) {
+function isCdnUrl(url?: string | null) {
     if (!url) return false;
     // 使用配置中的 cdnDomain 进行检查
     return url.includes(config.cdnDomain);
@@ -45,7 +80,7 @@ function isCdnUrl(url?: string) {
 function generateFallbackUrl(cdnUrl: string) {
     // URL 转换规则: CDN域名/xxx -> 当前主域/xxx
     const regex = getCdnUrlRegex();
-    return cdnUrl.replace(regex, config.fallbackDomain + '/');
+    return cdnUrl.replace(regex, config.fallbackDomain + "/");
 }
 
 /**
@@ -53,11 +88,11 @@ function generateFallbackUrl(cdnUrl: string) {
  * @param {Element} element - 元素
  * @param {string} type - 处理类型: 'error' | 'background'
  */
-function markElementProcessed(element: any, type: RsHandleType) {
-    if (type === 'error') {
-        element.dataset.cdnErrorHandled = 'true';
-    } else if (type === 'background') {
-        element.dataset.cdnBackgroundProcessed = 'true';
+function markElementProcessed(element: HTMLElement, type: RsHandleType) {
+    if (type === "error") {
+        element.dataset.cdnErrorHandled = "true";
+    } else if (type === "background") {
+        element.dataset.cdnBackgroundProcessed = "true";
     }
 }
 
@@ -67,13 +102,21 @@ function markElementProcessed(element: any, type: RsHandleType) {
  * @param {string} type - 处理类型
  * @returns {boolean}
  */
-function isElementProcessed(element: any, type: RsHandleType) {
-    if (type === 'error') {
-        return element.dataset.cdnErrorHandled === 'true';
-    } else if (type === 'background') {
-        return element.dataset.cdnBackgroundProcessed === 'true';
+function isElementProcessed(element: HTMLElement, type: RsHandleType) {
+    if (type === "error") {
+        return element.dataset.cdnErrorHandled === "true";
+    } else if (type === "background") {
+        return element.dataset.cdnBackgroundProcessed === "true";
     }
     return false;
+}
+
+function reportCdnError(resourceUrl: string) {
+    if (typeof window === "undefined") return;
+    const sentry = window.Sentry;
+    if (sentry && typeof sentry.captureException === "function") {
+        sentry.captureException(new Error("CDN资源加载失败: " + resourceUrl));
+    }
 }
 
 // ==================== 资源错误处理 ====================
@@ -84,13 +127,13 @@ function isElementProcessed(element: any, type: RsHandleType) {
  * @param {string} fallbackUrl - 降级 URL
  */
 function handleScriptFallback(script: HTMLScriptElement, fallbackUrl: string) {
-    const newScript = document.createElement('script');
+    const newScript = document.createElement("script");
     newScript.src = fallbackUrl;
     if (script.async !== undefined) newScript.async = script.async;
     if (script.defer !== undefined) newScript.defer = script.defer;
     if (script.type) newScript.type = script.type;
     document.head.appendChild(newScript);
-    console.log('✅ 已创建降级 SCRIPT:', fallbackUrl);
+    console.log("✅ 已创建降级 SCRIPT:", fallbackUrl);
 }
 
 /**
@@ -99,13 +142,13 @@ function handleScriptFallback(script: HTMLScriptElement, fallbackUrl: string) {
  * @param {string} fallbackUrl - 降级 URL
  */
 function handleLinkFallback(link: HTMLLinkElement, fallbackUrl: string) {
-    const newLink = document.createElement('link');
-    newLink.rel = 'stylesheet';
+    const newLink = document.createElement("link");
+    newLink.rel = "stylesheet";
     newLink.href = fallbackUrl;
-    newLink.type = 'text/css';
+    newLink.type = "text/css";
     if (link.media) newLink.media = link.media;
     document.head.appendChild(newLink);
-    console.log('✅ 已创建降级 CSS:', fallbackUrl);
+    console.log("✅ 已创建降级 CSS:", fallbackUrl);
 }
 
 /**
@@ -116,37 +159,38 @@ function handleLinkFallback(link: HTMLLinkElement, fallbackUrl: string) {
 function handleImageFallback(img: HTMLImageElement, fallbackUrl: string) {
     // 处理 <picture> 中的 <source> 标签
     const pictureParent = img.parentElement;
-    if (pictureParent && pictureParent.tagName === 'PICTURE') {
-        const sources = pictureParent.querySelectorAll('source[srcset*="' + config.cdnDomain + '"]');
-        sources.forEach(function (source) {
-            if (isElementProcessed(source as HTMLElement, 'error')) return;
+    if (pictureParent && pictureParent.tagName === "PICTURE") {
+        const sources = pictureParent.querySelectorAll("source[srcset*='" + config.cdnDomain + "']");
+        sources.forEach((source) => {
+            if (!(source instanceof HTMLElement)) return;
+            if (isElementProcessed(source, "error")) return;
 
-            const sourceSrcset = source.getAttribute('srcset');
+            const sourceSrcset = source.getAttribute("srcset");
             if (sourceSrcset && isCdnUrl(sourceSrcset)) {
                 const fallbackSrcset = generateFallbackUrl(sourceSrcset);
-                source.setAttribute('srcset', fallbackSrcset);
-                markElementProcessed(source as HTMLElement, 'error');
-                console.log('🔄 替换 <source> srcset:', sourceSrcset, '→', fallbackSrcset);
+                source.setAttribute("srcset", fallbackSrcset);
+                markElementProcessed(source, "error");
+                console.log("🔄 替换 <source> srcset:", sourceSrcset, "→", fallbackSrcset);
             }
         });
     }
 
     // 处理 img 的 src
     // 先移除 src，触发浏览器清理错误状态
-    img.removeAttribute('src');
+    img.removeAttribute("src");
 
     // 使用 setTimeout 确保浏览器已经处理了移除操作
-    setTimeout(function () {
-        img.setAttribute('src', fallbackUrl);
-        console.log('✅ 已设置新 src:', fallbackUrl);
+    setTimeout(() => {
+        img.setAttribute("src", fallbackUrl);
+        console.log("✅ 已设置新 src:", fallbackUrl);
 
         // 监听新 URL 的加载结果
-        img.onload = function () {
-            console.log('✅ 主域图片加载成功:', fallbackUrl);
+        img.onload = () => {
+            console.log("✅ 主域图片加载成功:", fallbackUrl);
         };
-        img.onerror = function () {
-            console.error('❌ 主域图片加载失败:', fallbackUrl);
-            img.style.display = 'none';  // 主域也失败，隐藏图片
+        img.onerror = () => {
+            console.error("❌ 主域图片加载失败:", fallbackUrl);
+            img.style.display = "none"; // 主域也失败，隐藏图片
         };
     }, 0);
 }
@@ -155,17 +199,17 @@ function handleImageFallback(img: HTMLImageElement, fallbackUrl: string) {
  * 处理单个资源错误
  * @param {Element} element - 出错的元素
  */
-function handleResourceError(element: any) {
-    const resourceUrl = element.src || element.href;
+function handleResourceError(element: Element) {
+    const resourceUrl = (element as HTMLImageElement).src || (element as HTMLLinkElement).href;
 
     // 检查是否已经处理过（主域资源也失败的情况）
-    if (isElementProcessed(element, 'error')) {
-        console.error('❌ 主域资源也加载失败:', resourceUrl);
-        element.dataset.cdnErrorHandled = 'failed';
+    if (isElementProcessed(element as HTMLElement, "error")) {
+        console.error("❌ 主域资源也加载失败:", resourceUrl);
+        (element as HTMLElement).dataset.cdnErrorHandled = "failed";
 
         // 图片兜底：隐藏
-        if (element.tagName === 'IMG') {
-            element.style.display = 'none';
+        if (element.tagName === "IMG") {
+            (element as HTMLImageElement).style.display = "none";
         }
         return;
     }
@@ -175,23 +219,27 @@ function handleResourceError(element: any) {
         return;
     }
 
-    console.warn('⚠️ CDN 资源加载失败:', resourceUrl);
+    console.warn("⚠️ CDN 资源加载失败:", resourceUrl);
 
     // 生成降级 URL
-    const fallbackUrl = generateFallbackUrl(resourceUrl);
-    console.log('🔄 尝试降级到主域:', fallbackUrl);
+    const fallbackUrl = generateFallbackUrl(resourceUrl!);
+    console.log("🔄 尝试降级到主域:", fallbackUrl);
 
     // 标记为已处理
-    markElementProcessed(element, 'error');
+    markElementProcessed(element as HTMLElement, "error");
 
     // 根据标签类型处理
     const tagName = element.tagName;
-    if (tagName === 'SCRIPT') {
-        handleScriptFallback(element, fallbackUrl);
-    } else if (tagName === 'LINK' && element.rel === 'stylesheet') {
-        handleLinkFallback(element, fallbackUrl);
-    } else if (tagName === 'IMG') {
-        handleImageFallback(element, fallbackUrl);
+    if (tagName === "SCRIPT") {
+        handleScriptFallback(element as HTMLScriptElement, fallbackUrl);
+    } else if (tagName === "LINK" && (element as HTMLLinkElement).rel === "stylesheet") {
+        handleLinkFallback(element as HTMLLinkElement, fallbackUrl);
+    } else if (tagName === "IMG") {
+        handleImageFallback(element as HTMLImageElement, fallbackUrl);
+    }
+
+    if (resourceUrl) {
+        reportCdnError(resourceUrl);
     }
 }
 
@@ -202,16 +250,16 @@ function handleResourceError(element: any) {
  * @param {Element} element - 元素
  * @returns {boolean} 是否已处理
  */
-function replaceInlineBackgroundImage(element: any) {
+function replaceInlineBackgroundImage(element: HTMLElement) {
     const inlineStyle = element.style.backgroundImage;
     if (!inlineStyle || !isCdnUrl(inlineStyle)) {
         return false;
     }
 
     const regex = getCdnUrlRegex();
-    const newStyle = inlineStyle.replace(regex, config.fallbackDomain + '/');
+    const newStyle = inlineStyle.replace(regex, config.fallbackDomain + "/");
     element.style.backgroundImage = newStyle;
-    console.log('🎨 替换内联背景图:', inlineStyle, '→', newStyle);
+    console.log("🎨 替换内联背景图:", inlineStyle, "→", newStyle);
     return true;
 }
 
@@ -220,9 +268,9 @@ function replaceInlineBackgroundImage(element: any) {
  * @param {Element} element - 元素
  * @param {boolean} hasBgLazy - 是否有 bg-lazy 类
  */
-function replaceComputedBackgroundImage(element: any, hasBgLazy: boolean) {
+function replaceComputedBackgroundImage(element: HTMLElement, hasBgLazy: boolean) {
     const computedStyle = window.getComputedStyle(element).backgroundImage;
-    if (!computedStyle || computedStyle === 'none' || computedStyle === 'inherit') {
+    if (!computedStyle || computedStyle === "none" || computedStyle === "inherit") {
         return;
     }
 
@@ -232,7 +280,7 @@ function replaceComputedBackgroundImage(element: any, hasBgLazy: boolean) {
         return;
     }
 
-    urlMatches.forEach(function (urlMatch) {
+    urlMatches.forEach((urlMatch) => {
         // 提取单个 URL
         const url = urlMatch.match(/url\(["']?([^"')]+)["']?\)/);
         if (!url || !url[1] || !isCdnUrl(url[1])) {
@@ -245,22 +293,19 @@ function replaceComputedBackgroundImage(element: any, hasBgLazy: boolean) {
         if (hasBgLazy) {
             // 对于 bg-lazy 元素，保存降级 URL，在移除类时再应用
             element.dataset.cdnFallbackUrl = fallbackUrl;
-            console.log('🎨 记录 bg-lazy 背景图降级 URL:', originalUrl, '→', fallbackUrl);
+            console.log("🎨 记录 bg-lazy 背景图降级 URL:", originalUrl, "→", fallbackUrl);
         } else {
             // 对于非 bg-lazy 元素，直接设置内联样式
-            const currentStyle = element.style.backgroundImage || '';
-            if (currentStyle && currentStyle !== 'none') {
+            const currentStyle = element.style.backgroundImage || "";
+            if (currentStyle && currentStyle !== "none") {
                 // 替换 CDN URL（转义特殊字符）
-                const escapedUrl = originalUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                const newBgImage = currentStyle.replace(
-                    new RegExp(escapedUrl, 'g'),
-                    fallbackUrl
-                );
+                const escapedUrl = originalUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                const newBgImage = currentStyle.replace(new RegExp(escapedUrl, "g"), fallbackUrl);
                 element.style.backgroundImage = newBgImage;
             } else {
                 element.style.backgroundImage = 'url("' + fallbackUrl + '")';
             }
-            console.log('🎨 替换 CSS 背景图:', originalUrl, '→', fallbackUrl, '元素:', element.className);
+            console.log("🎨 替换 CSS 背景图:", originalUrl, "→", fallbackUrl, "元素:", element.className);
         }
     });
 }
@@ -269,17 +314,17 @@ function replaceComputedBackgroundImage(element: any, hasBgLazy: boolean) {
  * 替换元素的背景图
  * @param {Element} element - 要处理的元素
  */
-function replaceBackgroundImage(element: any) {
+function replaceBackgroundImage(element: HTMLElement) {
     // 1. 优先处理内联样式中的背景图
     if (replaceInlineBackgroundImage(element)) {
         return;
     }
 
     // 2. 检查是否有 bg-lazy 类（需要特殊处理）
-    const hasBgLazy = element.classList.contains('bg-lazy');
+    const hasBgLazy = element.classList.contains("bg-lazy");
     if (hasBgLazy) {
         // 临时移除 bg-lazy 类以检测背景图
-        element.classList.remove('bg-lazy');
+        element.classList.remove("bg-lazy");
     }
 
     // 3. 处理计算样式中的背景图（来自 CSS 文件）
@@ -287,7 +332,7 @@ function replaceBackgroundImage(element: any) {
 
     // 4. 恢复 bg-lazy 类（如果原来有的话）
     if (hasBgLazy) {
-        element.classList.add('bg-lazy');
+        element.classList.add("bg-lazy");
     }
 }
 
@@ -298,16 +343,17 @@ function replaceBackgroundImage(element: any) {
  */
 function replaceAllSources() {
     const sources = document.querySelectorAll('source[srcset*="' + config.cdnDomain + '"]');
-    sources.forEach(function (source) {
-        if (isElementProcessed(source, 'error')) return;
+    sources.forEach((source) => {
+        if (!(source instanceof HTMLElement)) return;
+        if (isElementProcessed(source, "error")) return;
 
-        const sourceSrcset = source.getAttribute('srcset');
+        const sourceSrcset = source.getAttribute("srcset");
         if (!sourceSrcset || !isCdnUrl(sourceSrcset)) return;
 
         const fallbackSrcset = generateFallbackUrl(sourceSrcset);
-        source.setAttribute('srcset', fallbackSrcset);
-        markElementProcessed(source, 'error');
-        console.log('批量替换 <source>:', sourceSrcset, '→', fallbackSrcset);
+        source.setAttribute("srcset", fallbackSrcset);
+        markElementProcessed(source, "error");
+        console.log("批量替换 <source>:", sourceSrcset, "→", fallbackSrcset);
     });
 }
 
@@ -316,19 +362,17 @@ function replaceAllSources() {
  */
 function replaceAllImages() {
     const images = document.querySelectorAll('img[src*="' + config.cdnDomain + '"]');
-    images.forEach(function (img) {
-        if (img instanceof HTMLImageElement) {
+    images.forEach((img) => {
+        if (!(img instanceof HTMLImageElement)) return;
 
+        if (isElementProcessed(img, "error")) return;
 
-            if (isElementProcessed(img, 'error')) return;
+        if (!isCdnUrl(img.src)) return;
 
-            if (!isCdnUrl(img.src)) return;
-
-            const fallbackUrl = generateFallbackUrl(img.src);
-            markElementProcessed(img, 'error');
-            img.src = fallbackUrl;
-            console.log('批量替换 <img>:', img.src, '→', fallbackUrl);
-        }
+        const fallbackUrl = generateFallbackUrl(img.src);
+        markElementProcessed(img, "error");
+        img.src = fallbackUrl;
+        console.log("批量替换 <img>:", img.src, "→", fallbackUrl);
     });
 }
 
@@ -336,19 +380,20 @@ function replaceAllImages() {
  * 批量替换所有背景图
  */
 function replaceAllBackgroundImages() {
-    console.log('🎨 开始检查背景图（包括 bg-lazy 元素）...');
-    const allElements = document.querySelectorAll('*');
-    allElements.forEach(function (element) {
-        if (!isElementProcessed(element, 'background')) {
+    console.log("🎨 开始检查背景图（包括 bg-lazy 元素）...");
+    const allElements = document.querySelectorAll("*");
+    allElements.forEach((element) => {
+        if (!(element instanceof HTMLElement)) return;
+        if (!isElementProcessed(element, "background")) {
             replaceBackgroundImage(element);
         }
     });
 
     // 特殊处理：标记所有 bg-lazy 元素，在移除类时自动处理 CDN 降级
-    const bgLazyElements = document.querySelectorAll('.bg-lazy');
-    bgLazyElements.forEach(function (element) {
+    const bgLazyElements = document.querySelectorAll(".bg-lazy");
+    bgLazyElements.forEach((element) => {
         if (element instanceof HTMLElement) {
-            element.dataset.cdnFallbackPending = 'true';
+            element.dataset.cdnFallbackPending = "true";
         }
     });
 }
@@ -357,7 +402,7 @@ function replaceAllBackgroundImages() {
  * 批量替换页面中的 CDN 资源（用于预检测到 CDN 不可用时）
  */
 function replaceAllCdnResources() {
-    console.warn('🚨 CDN 不可用，批量替换所有资源');
+    console.warn("🚨 CDN 不可用，批量替换所有资源");
 
     replaceAllSources();
     replaceAllImages();
@@ -368,35 +413,32 @@ function replaceAllCdnResources() {
 
 /**
  * 测试 CDN 是否可用
- * 
+ *
  * 为什么需要预检测？
  * ====================
  * 1. ⚠️ CSS 背景图加载失败不会触发 error 事件，只能通过预检测处理
  * 2. 提前发现 CDN 整体不可用，批量替换所有资源，避免逐个失败
  * 3. 提高用户体验：如果 CDN 不可用，立即批量替换，而不是等待资源逐个失败
- * 
+ *
  * 与 error 事件监听的区别：
  * - 预检测：主动测试，发现 CDN 整体不可用，批量处理
  * - error 监听：被动响应，处理单个资源失败
- * 
+ *
  * @param {Function} callback - 回调函数，接收 isAvailable 参数
  */
-function testCdnAvailability(callback: Function) {
-    // 没配置 不测试
+function testCdnAvailability(callback: (isAvailable: boolean) => void) {
     if (!config.testImagePath) {
-        cdnAvailable = true;
+        config.cdnAvailable = true;
     }
-    // 如果已经测试过，直接返回结果
-    if (cdnAvailable !== null) {
-        callback(cdnAvailable);
+    if (config.cdnAvailable !== null) {
+        callback(config.cdnAvailable);
         return;
     }
 
-    console.log('🔍 测试 CDN 可用性...');
+    console.log("🔍 测试 CDN 可用性...");
 
-    // 使用一个小图片测试
     const testImg = new Image();
-    let timer: any = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
     let completed = false;
 
     function complete(isAvailable: boolean) {
@@ -404,9 +446,9 @@ function testCdnAvailability(callback: Function) {
         completed = true;
 
         if (timer) clearTimeout(timer);
-        cdnAvailable = isAvailable;
+        config.cdnAvailable = isAvailable;
 
-        console.log(isAvailable ? '✅ CDN 可用' : '❌ CDN 不可用');
+        console.log(isAvailable ? "✅ CDN 可用" : "❌ CDN 不可用");
         callback(isAvailable);
     }
 
@@ -418,13 +460,11 @@ function testCdnAvailability(callback: Function) {
         complete(false);
     };
 
-    // 超时处理
     timer = setTimeout(function () {
         complete(false);
     }, config.testTimeout);
 
-    // 使用测试图片进行检测
-    const testUrl = getCdnBaseUrl() + config.testImagePath + '?' + Date.now();
+    const testUrl = getCdnBaseUrl() + config.testImagePath + "?" + Date.now();
     testImg.src = testUrl;
 }
 
@@ -432,41 +472,31 @@ function testCdnAvailability(callback: Function) {
 
 /**
  * 初始化全局资源错误监听器
- * 
- * 为什么需要 error 事件监听？
- * ====================
- * 1. 处理单个资源失败的情况（CDN 可用但某个资源加载失败）
- * 2. 处理动态添加的资源
- * 3. 实时响应资源加载失败
- * 
- * 局限性：
- * - ❌ 无法捕获 CSS 背景图加载失败（浏览器限制）
- * - ❌ 无法在资源加载前预判
- * 
- * 因此需要配合预检测机制使用
  */
 function initErrorListener() {
-    window.addEventListener('error', function (e) {
-        const target = e.target;
-        if (!(target instanceof Element)) {
-            return
-        }
-        // 只处理有 src 或 href 的元素
-        const resourceUrl = (target as any).src || (target as any).href;
+    window.addEventListener(
+        "error",
+        (e) => {
+            const target = e.target;
+            if (!(target instanceof Element)) {
+                return;
+            }
+            const resourceUrl = (target as HTMLImageElement).src || (target as HTMLLinkElement).href;
 
-        // 只处理有 src 或 href 的元素
-        if (!resourceUrl) return;
+            if (!resourceUrl) return;
 
-        // 只处理 CDN 资源（不处理已经降级的主域资源）
-        if (!isCdnUrl(resourceUrl)) return;
+            if (!isCdnUrl(resourceUrl)) return;
 
-        // 处理 SCRIPT、LINK、IMG 标签
-        if (target.tagName === 'SCRIPT' ||
-            target.tagName === 'LINK' ||
-            target.tagName === 'IMG') {
-            handleResourceError(target);
-        }
-    }, true); // 捕获阶段
+            if (
+                target.tagName === "SCRIPT" ||
+                target.tagName === "LINK" ||
+                target.tagName === "IMG"
+            ) {
+                handleResourceError(target);
+            }
+        },
+        true,
+    );
 }
 
 // ==================== 动态元素监听 ====================
@@ -475,65 +505,61 @@ function initErrorListener() {
  * 处理新添加的元素（仅当 CDN 不可用时）
  * @param {Element} node - 新添加的元素
  */
-function handleNewElement(node: any) {
-    if (cdnAvailable !== false) return;
+function handleNewElement(node: Element) {
+    if (config.cdnAvailable !== false) return;
 
-    // 处理 IMG 标签
-    if (node.tagName === 'IMG' && node.src && isCdnUrl(node.src)) {
-        if (!isElementProcessed(node, 'error')) {
+    if (node.tagName === "IMG" && (node as HTMLImageElement).src && isCdnUrl((node as HTMLImageElement).src)) {
+        if (!isElementProcessed(node as HTMLElement, "error")) {
             handleResourceError(node);
         }
         return;
     }
 
-    // 处理 SOURCE 标签
-    if (node.tagName === 'SOURCE' && node.srcset && isCdnUrl(node.srcset)) {
-        if (!isElementProcessed(node, 'error')) {
-            const fallbackSrcset = generateFallbackUrl(node.srcset);
-            node.setAttribute('srcset', fallbackSrcset);
-            markElementProcessed(node, 'error');
+    if (node.tagName === "SOURCE" && (node as HTMLSourceElement).srcset && isCdnUrl((node as HTMLSourceElement).srcset)) {
+        if (!isElementProcessed(node as HTMLElement, "error")) {
+            const fallbackSrcset = generateFallbackUrl((node as HTMLSourceElement).srcset);
+            (node as HTMLSourceElement).setAttribute("srcset", fallbackSrcset);
+            markElementProcessed(node as HTMLElement, "error");
         }
         return;
     }
 
-    // 处理 bg-lazy 元素
-    if (node.classList && node.classList.contains('bg-lazy')) {
-        node.dataset.cdnFallbackPending = 'true';
+    if ((node as HTMLElement).classList && (node as HTMLElement).classList.contains("bg-lazy")) {
+        (node as HTMLElement).dataset.cdnFallbackPending = "true";
     }
 
-    // 处理子元素
-    if (node.querySelectorAll) {
-        // 处理子元素中的图片
-        const images = node.querySelectorAll('img[src*="' + config.cdnDomain + '"]');
-        images.forEach(function (img: HTMLImageElement) {
-            if (!isElementProcessed(img, 'error')) {
-                handleResourceError(img);
+    if ((node as HTMLElement).querySelectorAll) {
+        const images = (node as HTMLElement).querySelectorAll('img[src*="' + config.cdnDomain + '"]');
+        images.forEach((img) => {
+            if (img instanceof HTMLImageElement) {
+                if (!isElementProcessed(img, "error")) {
+                    handleResourceError(img);
+                }
             }
         });
 
-        // 标记子元素中的 bg-lazy
-        const bgLazyElements = node.querySelectorAll('.bg-lazy');
-        bgLazyElements.forEach(function (element: any) {
-            element.dataset.cdnFallbackPending = 'true';
+        const bgLazyElements = (node as HTMLElement).querySelectorAll(".bg-lazy");
+        bgLazyElements.forEach((element) => {
+            if (element instanceof HTMLElement) {
+                element.dataset.cdnFallbackPending = "true";
+            }
         });
 
-        // 处理子元素的背景图（延迟处理，确保 CSS 样式已应用）
-        const allChildElements = node.querySelectorAll('*');
-        allChildElements.forEach(function (element: any) {
-            if (!isElementProcessed(element, 'background')) {
-                setTimeout(function () {
+        const allChildElements = (node as HTMLElement).querySelectorAll("*");
+        allChildElements.forEach((element) => {
+            if (element instanceof HTMLElement && !isElementProcessed(element, "background")) {
+                setTimeout(() => {
                     replaceBackgroundImage(element);
-                    markElementProcessed(element, 'background');
+                    markElementProcessed(element, "background");
                 }, 50);
             }
         });
     }
 
-    // 处理元素本身的背景图（延迟处理，确保 CSS 样式已应用）
-    if (!isElementProcessed(node, 'background')) {
-        setTimeout(function () {
-            replaceBackgroundImage(node);
-            markElementProcessed(node, 'background');
+    if (!isElementProcessed(node as HTMLElement, "background")) {
+        setTimeout(() => {
+            replaceBackgroundImage(node as HTMLElement);
+            markElementProcessed(node as HTMLElement, "background");
         }, 50);
     }
 }
@@ -544,22 +570,21 @@ function handleNewElement(node: any) {
 function observeDynamicElements() {
     if (!window.MutationObserver) return;
 
-    const observer = new MutationObserver(function (mutations) {
-        mutations.forEach(function (mutation) {
-            mutation.addedNodes.forEach(function (node) {
-                if (node.nodeType === 1) { // Element node
-                    handleNewElement(node);
+    const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+            mutation.addedNodes.forEach((node) => {
+                if (node.nodeType === 1) {
+                    handleNewElement(node as Element);
                 }
             });
         });
     });
 
-    // 等待 body 元素准备好
     function startObserving() {
         if (document.body) {
             observer.observe(document.body, {
                 childList: true,
-                subtree: true
+                subtree: true,
             });
         }
     }
@@ -567,8 +592,7 @@ function observeDynamicElements() {
     if (document.body) {
         startObserving();
     } else {
-        // 如果 body 还没准备好，等待 DOMContentLoaded
-        document.addEventListener('DOMContentLoaded', startObserving);
+        document.addEventListener("DOMContentLoaded", startObserving);
     }
 }
 
@@ -578,31 +602,32 @@ function observeDynamicElements() {
  * 延迟检查背景图（确保 CSS 已完全加载）
  */
 function delayedBackgroundCheck() {
-    console.log('🔄 延迟检查背景图，确保 CSS 已加载...');
-    const allElements = document.querySelectorAll('*');
+    console.log("🔄 延迟检查背景图，确保 CSS 已加载...");
+    const allElements = document.querySelectorAll("*");
     let processedCount = 0;
 
-    allElements.forEach(function (element) {
-        if (isElementProcessed(element, 'background')) return;
+    allElements.forEach((element) => {
+        if (!(element instanceof HTMLElement)) return;
+        if (isElementProcessed(element, "background")) return;
 
         const computedStyle = window.getComputedStyle(element).backgroundImage;
-        if (!computedStyle || computedStyle === 'none' || computedStyle === 'inherit') return;
+        if (!computedStyle || computedStyle === "none" || computedStyle === "inherit") return;
 
         const urlMatches = computedStyle.match(/url\(["']?([^"')]+)["']?\)/g);
         if (!urlMatches) return;
 
-        urlMatches.forEach(function (urlMatch) {
+        urlMatches.forEach((urlMatch) => {
             const url = urlMatch.match(/url\(["']?([^"')]+)["']?\)/);
             if (url && url[1] && isCdnUrl(url[1])) {
                 replaceBackgroundImage(element);
-                markElementProcessed(element, 'background');
+                markElementProcessed(element, "background");
                 processedCount++;
             }
         });
     });
 
     if (processedCount > 0) {
-        console.log('✅ 延迟检查发现并处理了 ' + processedCount + ' 个背景图');
+        console.log("✅ 延迟检查发现并处理了 " + processedCount + " 个背景图");
     }
 }
 
@@ -610,13 +635,8 @@ function delayedBackgroundCheck() {
  * 执行批量替换（确保 CSS 已加载）
  */
 function executeReplaceAll() {
-    // CDN 不可用，批量替换所有资源（包括背景图）
     replaceAllCdnResources();
-
-    // 开始监听动态添加的元素
     observeDynamicElements();
-
-    // 延迟再次检查，确保 CSS 已完全加载和应用
     setTimeout(delayedBackgroundCheck, 100);
 }
 
@@ -624,89 +644,63 @@ function executeReplaceAll() {
 
 /**
  * 初始化 CDN 降级处理
- * 
- * ⚠️ 执行时机说明（改成 UMD 后的关键问题）：
- * ====================
- * 改成 UMD 后，init() 是手动调用的，而不是自执行。
- * 这会导致执行时机可能不同：
- * 
- * 1. 如果 init() 调用时 document.readyState === 'loading'
- *    → 添加 DOMContentLoaded 监听器，等待 DOM 加载完成 ✅
- * 
- * 2. 如果 init() 调用时 document.readyState === 'interactive'
- *    → DOMContentLoaded 已触发或即将触发，使用 setTimeout 确保事件处理完成 ✅
- * 
- * 3. 如果 init() 调用时 document.readyState === 'complete'
- *    → 页面已完全加载，直接执行 ✅
- * 
- * 关键修复：确保无论何时调用 init()，预检测都能正确执行，
- * 从而保证 CSS 背景图的降级处理能够正常工作。
- * 
  * @param {Object} options - 配置选项
  * @param {string} options.cdnDomain - CDN 完整域名带路径前缀，默认: 'mg.127.net/static/qiye-official'
  * @param {string} options.fallbackDomain - 降级域名，默认: location.origin
  * @param {number} options.testTimeout - CDN 测试超时时间（毫秒），默认: 3000
  * @param {string} options.testImagePath - CDN 测试图片路径，默认: '/new/img/logo.5d2411d5.png'
  */
-function init(options?: RsRetryCongfig) {
-    // 合并配置
-    config = Object.assign(config, options);
+function init(options?: RsRetryInitOptions) {
+    config = {
+        ...defaultConfig,
+        ...options,
+        cdnAvailable: null,
+    };
 
-    // 如果没有指定 fallbackDomain，使用默认值
-    if (!config.fallbackDomain && typeof location !== 'undefined') {
+    if (!config.fallbackDomain && typeof location !== "undefined") {
         config.fallbackDomain = location.origin;
     }
 
-    // 初始化错误监听器
+    initialized = true;
+
     initErrorListener();
 
-    // 页面加载时预检测 CDN
-    // ⚠️ 必须启用：CSS 背景图加载失败不会触发 error 事件，只能通过预检测处理
-    if (typeof document !== 'undefined') {
-        // 执行预检测的函数
+    if (typeof document !== "undefined") {
         function doPreCheck() {
-            console.log('🔍 开始检测 CDN 可用性...');
-            testCdnAvailability(function (isAvailable: boolean) {
+            console.log("🔍 开始检测 CDN 可用性...");
+            testCdnAvailability((isAvailable) => {
                 if (!isAvailable) {
-                    // CDN 不可用，执行批量替换
                     executeReplaceAll();
                 } else {
-                    console.log('✅ CDN 可用，无需批量替换');
+                    console.log("✅ CDN 可用，无需批量替换");
                 }
             });
         }
 
-        // 根据文档状态决定何时执行
-        if (document.readyState === 'loading') {
-            // DOM 还在加载，等待 DOMContentLoaded 事件
-            document.addEventListener('DOMContentLoaded', function () {
-                console.log('🔍 页面 DOM 加载完成，开始检测 CDN 可用性...');
+        if (document.readyState === "loading") {
+            document.addEventListener("DOMContentLoaded", () => {
+                console.log("🔍 页面 DOM 加载完成，开始检测 CDN 可用性...");
                 doPreCheck();
             });
-        } else if (document.readyState === 'interactive') {
-            // DOM 已解析完成（DOMContentLoaded 已触发或即将触发）
-            // 使用 setTimeout 确保 DOMContentLoaded 事件已经处理完成
-            setTimeout(function () {
-                console.log('🔍 DOM 已解析完成，开始检测 CDN 可用性...');
+        } else if (document.readyState === "interactive") {
+            setTimeout(() => {
+                console.log("🔍 DOM 已解析完成，开始检测 CDN 可用性...");
                 doPreCheck();
             }, 0);
         } else {
-            // document.readyState === 'complete'，页面完全加载
-            // 直接执行，但需要确保 CSS 已加载
-            console.log('🔍 页面已完全加载，开始检测 CDN 可用性...');
+            console.log("🔍 页面已完全加载，开始检测 CDN 可用性...");
             doPreCheck();
         }
 
-        // 在 window.onload 时再次检查（确保所有资源都已加载）
-        if (typeof window !== 'undefined') {
-            window.addEventListener('load', function () {
-                if (cdnAvailable === false) {
-                    console.log('🔄 window.onload 时再次检查背景图...');
-                    const allElements = document.querySelectorAll('*');
-                    allElements.forEach(function (element) {
-                        if (!isElementProcessed(element, 'background')) {
+        if (typeof window !== "undefined") {
+            window.addEventListener("load", () => {
+                if (config.cdnAvailable === false) {
+                    console.log("🔄 window.onload 时再次检查背景图...");
+                    const allElements = document.querySelectorAll("*");
+                    allElements.forEach((element) => {
+                        if (element instanceof HTMLElement && !isElementProcessed(element, "background")) {
                             replaceBackgroundImage(element);
-                            markElementProcessed(element, 'background');
+                            markElementProcessed(element, "background");
                         }
                     });
                 }
@@ -722,109 +716,70 @@ function init(options?: RsRetryCongfig) {
  * @param {Element|string} element - 元素或选择器
  */
 function checkElementBackground(element: Element | string) {
-    const el = typeof element === 'string' ? document.querySelector(element) : element;
-    if (!el || cdnAvailable !== false) return;
+    const el = typeof element === "string" ? document.querySelector(element) : element;
+    if (!el || config.cdnAvailable !== false) return;
 
-    // 检查元素本身
-    if (!isElementProcessed(el, 'background')) {
-        replaceBackgroundImage(el);
-        markElementProcessed(el, 'background');
+    if (!isElementProcessed(el as HTMLElement, "background")) {
+        replaceBackgroundImage(el as HTMLElement);
+        markElementProcessed(el as HTMLElement, "background");
     }
 
-    // 检查所有子元素
-    const allChildElements = el.querySelectorAll('*');
-    allChildElements.forEach(function (childElement) {
-        if (!isElementProcessed(childElement, 'background')) {
-            replaceBackgroundImage(childElement);
-            markElementProcessed(childElement, 'background');
+    const allChildElements = (el as HTMLElement).querySelectorAll("*");
+    allChildElements.forEach((childElement) => {
+        if (!isElementProcessed(childElement as HTMLElement, "background")) {
+            replaceBackgroundImage(childElement as HTMLElement);
+            markElementProcessed(childElement as HTMLElement, "background");
         }
     });
 }
-
-// ==================== 公共 API ====================
 
 /**
  * 获取当前配置
  * @returns {Object} 配置对象
  */
-function getConfig() {
-    return config ? Object.assign({}, config) : null;
+function getConfigSnapshot(): RsRetryConfig | null {
+    if (!initialized) {
+        return null;
+    }
+    return { ...config };
 }
 
-// 暴露公共 API
-const publicAPI = {
-    /**
-     * 初始化 CDN 降级处理
-     * @param {Object} options - 配置选项
-     * @param {string} options.cdnDomain - CDN 完整域名带路径前缀
-     * @param {string} options.fallbackDomain - 降级域名
-     * @param {number} options.testTimeout - CDN 测试超时时间（毫秒）
-     * @param {string} options.testImagePath - CDN 测试图片路径
-     */
-    init: init,
-
-    /**
-     * 测试 CDN 可用性
-     * @param {Function} callback - 回调函数，接收 isAvailable 参数
-     */
-    test: function (callback: Function) {
-        if (!config) {
-            console.warn('⚠️ 请先调用 init() 初始化');
+const publicAPI: RsRetryPublicAPI = {
+    init,
+    test(callback: (isAvailable: boolean) => void) {
+        if (!initialized) {
+            console.warn("⚠️ 请先调用 init() 初始化");
             return;
         }
         testCdnAvailability(callback);
     },
-
-    /**
-     * 批量替换所有资源
-     */
-    replaceAll: function () {
-        if (!config) {
-            console.warn('⚠️ 请先调用 init() 初始化');
+    replaceAll() {
+        if (!initialized) {
+            console.warn("⚠️ 请先调用 init() 初始化");
             return;
         }
         replaceAllCdnResources();
     },
-
-    /**
-     * 替换单个元素的背景图
-     * @param {Element} element - 要处理的元素
-     */
-    replaceBackground: function (element: any) {
-        if (!config) {
-            console.warn('⚠️ 请先调用 init() 初始化');
+    replaceBackground(element: Element) {
+        if (!initialized) {
+            console.warn("⚠️ 请先调用 init() 初始化");
             return;
         }
-        replaceBackgroundImage(element);
+        replaceBackgroundImage(element as HTMLElement);
     },
-
-    /**
-     * 检查指定元素及其子元素的背景图（用于弹窗等动态内容）
-     * @param {Element|string} element - 元素或选择器
-     */
-    checkElement: function (element: any) {
-        if (!config) {
-            console.warn('⚠️ 请先调用 init() 初始化');
+    checkElement(element: Element | string) {
+        if (!initialized) {
+            console.warn("⚠️ 请先调用 init() 初始化");
             return;
         }
         checkElementBackground(element);
     },
-
-    /**
-     * 获取当前配置
-     * @returns {Object} 配置对象（只读）
-     */
-    getConfig: getConfig
-};
-
-// 暴露 config 属性（只读，用于向后兼容 bg-lazy.js 等）
-// 使用 Object.defineProperty 确保只读，并在 init 时更新
-Object.defineProperty(publicAPI, 'config', {
-    get: function () {
-        return config ? Object.assign({}, config) : null;
+    getConfig() {
+        return getConfigSnapshot();
     },
-    enumerable: true,
-    configurable: false
-});
+    get config() {
+        return getConfigSnapshot();
+    },
+};
 
 export default publicAPI;
