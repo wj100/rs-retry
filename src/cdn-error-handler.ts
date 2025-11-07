@@ -55,16 +55,6 @@ function getCdnUrlRegex() {
 }
 
 /**
- * 获取 CDN 基础 URL（协议 + 域名）
- * @returns {string} CDN 基础 URL
- */
-function getCdnBaseUrl() {
-    // 从 cdnDomain 生成完整的基础 URL
-    // config.cdnDomain -> https://[config.cdnDomain]
-    return "https://" + config.cdnDomain;
-}
-
-/**
  * 检查 URL 是否包含 CDN 域名
  * @param {string} url - 要检查的 URL
  * @returns {boolean}
@@ -84,6 +74,14 @@ function generateFallbackUrl(cdnUrl: string) {
     // URL 转换规则: CDN域名/xxx -> 当前主域/xxx
     const regex = getCdnUrlRegex();
     return cdnUrl.replace(regex, config.fallbackDomain + "/");
+}
+
+function isBackgroundFallbackEnabled() {
+    return Boolean(config.testImagePath);
+}
+
+function getCdnBaseUrl() {
+    return "https://" + config.cdnDomain;
 }
 
 /**
@@ -115,7 +113,7 @@ function isElementProcessed(element: HTMLElement, type: RsHandleType) {
 }
 
 function reportCdnError(resourceUrl: string) {
-    if (typeof window === "undefined") return;
+    if (!config.enableSentry || typeof window === "undefined") return;
     const sentry = window.Sentry;
     if (sentry && typeof sentry.captureException === "function") {
         sentry.captureException(new Error("CDN资源加载失败: " + resourceUrl));
@@ -254,6 +252,9 @@ function handleResourceError(element: Element) {
  * @returns {boolean} 是否已处理
  */
 function replaceInlineBackgroundImage(element: HTMLElement) {
+    if (!isBackgroundFallbackEnabled()) {
+        return false;
+    }
     const inlineStyle = element.style.backgroundImage;
     if (!inlineStyle || !isCdnUrl(inlineStyle)) {
         return false;
@@ -272,6 +273,9 @@ function replaceInlineBackgroundImage(element: HTMLElement) {
  * @param {boolean} hasBgLazy - 是否有 bg-lazy 类
  */
 function replaceComputedBackgroundImage(element: HTMLElement, hasBgLazy: boolean) {
+    if (!isBackgroundFallbackEnabled()) {
+        return;
+    }
     const computedStyle = window.getComputedStyle(element).backgroundImage;
     if (!computedStyle || computedStyle === "none" || computedStyle === "inherit") {
         return;
@@ -318,6 +322,9 @@ function replaceComputedBackgroundImage(element: HTMLElement, hasBgLazy: boolean
  * @param {Element} element - 要处理的元素
  */
 function replaceBackgroundImage(element: HTMLElement) {
+    if (!isBackgroundFallbackEnabled()) {
+        return;
+    }
     // 1. 优先处理内联样式中的背景图
     if (replaceInlineBackgroundImage(element)) {
         return;
@@ -383,6 +390,9 @@ function replaceAllImages() {
  * 批量替换所有背景图
  */
 function replaceAllBackgroundImages() {
+    if (!isBackgroundFallbackEnabled()) {
+        return;
+    }
     console.log("🎨 开始检查背景图（包括 bg-lazy 元素）...");
     const allElements = document.querySelectorAll("*");
     allElements.forEach((element) => {
@@ -409,7 +419,9 @@ function replaceAllCdnResources() {
 
     replaceAllSources();
     replaceAllImages();
-    replaceAllBackgroundImages();
+    if (isBackgroundFallbackEnabled()) {
+        replaceAllBackgroundImages();
+    }
 }
 
 // ==================== CDN 可用性检测 ====================
@@ -432,6 +444,8 @@ function replaceAllCdnResources() {
 function testCdnAvailability(callback: (isAvailable: boolean) => void) {
     if (!config.testImagePath) {
         cdnAvailable = true;
+        callback(true);
+        return;
     }
     if (cdnAvailable !== null) {
         callback(cdnAvailable);
@@ -467,8 +481,7 @@ function testCdnAvailability(callback: (isAvailable: boolean) => void) {
         complete(false);
     }, config.testTimeout);
 
-    const testUrl = getCdnBaseUrl() + config.testImagePath + "?" + Date.now();
-    testImg.src = testUrl;
+    testImg.src = getCdnBaseUrl() + config.testImagePath + "?" + Date.now();
 }
 
 // ==================== 事件监听 ====================
@@ -527,7 +540,7 @@ function handleNewElement(node: Element) {
         return;
     }
 
-    if ((node as HTMLElement).classList && (node as HTMLElement).classList.contains("bg-lazy")) {
+    if (isBackgroundFallbackEnabled() && (node as HTMLElement).classList && (node as HTMLElement).classList.contains("bg-lazy")) {
         (node as HTMLElement).dataset.cdnFallbackPending = "true";
     }
 
@@ -541,25 +554,27 @@ function handleNewElement(node: Element) {
             }
         });
 
-        const bgLazyElements = (node as HTMLElement).querySelectorAll(".bg-lazy");
-        bgLazyElements.forEach((element) => {
-            if (element instanceof HTMLElement) {
-                element.dataset.cdnFallbackPending = "true";
-            }
-        });
+        if (isBackgroundFallbackEnabled()) {
+            const bgLazyElements = (node as HTMLElement).querySelectorAll(".bg-lazy");
+            bgLazyElements.forEach((element) => {
+                if (element instanceof HTMLElement) {
+                    element.dataset.cdnFallbackPending = "true";
+                }
+            });
 
-        const allChildElements = (node as HTMLElement).querySelectorAll("*");
-        allChildElements.forEach((element) => {
-            if (element instanceof HTMLElement && !isElementProcessed(element, "background")) {
-                setTimeout(() => {
-                    replaceBackgroundImage(element);
-                    markElementProcessed(element, "background");
-                }, 50);
-            }
-        });
+            const allChildElements = (node as HTMLElement).querySelectorAll("*");
+            allChildElements.forEach((element) => {
+                if (element instanceof HTMLElement && !isElementProcessed(element, "background")) {
+                    setTimeout(() => {
+                        replaceBackgroundImage(element);
+                        markElementProcessed(element, "background");
+                    }, 50);
+                }
+            });
+        }
     }
 
-    if (!isElementProcessed(node as HTMLElement, "background")) {
+    if (isBackgroundFallbackEnabled() && !isElementProcessed(node as HTMLElement, "background")) {
         setTimeout(() => {
             replaceBackgroundImage(node as HTMLElement);
             markElementProcessed(node as HTMLElement, "background");
@@ -605,6 +620,9 @@ function observeDynamicElements() {
  * 延迟检查背景图（确保 CSS 已完全加载）
  */
 function delayedBackgroundCheck() {
+    if (!isBackgroundFallbackEnabled()) {
+        return;
+    }
     console.log("🔄 延迟检查背景图，确保 CSS 已加载...");
     const allElements = document.querySelectorAll("*");
     let processedCount = 0;
@@ -640,7 +658,9 @@ function delayedBackgroundCheck() {
 function executeReplaceAll() {
     replaceAllCdnResources();
     observeDynamicElements();
-    setTimeout(delayedBackgroundCheck, 100);
+    if (isBackgroundFallbackEnabled()) {
+        setTimeout(delayedBackgroundCheck, 100);
+    }
 }
 
 // ==================== 初始化 ====================
@@ -695,7 +715,7 @@ function init(options?: Partial<RsRetryConfig>) {
             doPreCheck();
         }
 
-        if (typeof window !== "undefined") {
+        if (typeof window !== "undefined" && isBackgroundFallbackEnabled()) {
             window.addEventListener("load", () => {
                 if (cdnAvailable === false) {
                     console.log("🔄 window.onload 时再次检查背景图...");
@@ -720,7 +740,7 @@ function init(options?: Partial<RsRetryConfig>) {
  */
 function checkElementBackground(element: Element | string) {
     const el = typeof element === "string" ? document.querySelector(element) : element;
-    if (!el || cdnAvailable !== false) return;
+    if (!el || cdnAvailable !== false || !isBackgroundFallbackEnabled()) return;
 
     if (!isElementProcessed(el as HTMLElement, "background")) {
         replaceBackgroundImage(el as HTMLElement);

@@ -33,77 +33,78 @@ npm install --save
 ```html
 <script src="https://chose.your.url/rs-retry.0.0.1.umd.js"></script>
 <script>
-    // 初始化配置
-    RsRetry.Handler.init({
-        cdnDomain: 'mg.127.net',  // CDN域名
-        fallbackDomain: location.origin  // 降级域名（默认为当前域名）
+    RsRetry.init({
+        cdnDomain: 'mg.127.net/static/qiye-official',
+        fallbackDomain: location.origin,
+        testTimeout: 3000,
+        // 需要背景图降级时提供测试图片路径
+        // testImagePath: '/health/check.png',
+        enableSentry: true
+    });
+
+    // 可选：监听检测结果
+    RsRetry.test((isAvailable) => {
+        console.log('CDN 可用性：', isAvailable);
     });
 </script>
 ```
 
+在支持 ES Module 的构建环境，也可以按需导入：
+
+```ts
+import RsRetry from 'rs-retry';
+
+RsRetry.init({
+    cdnDomain: 'mg.127.net/static/qiye-official',
+    fallbackDomain: window.location.origin,
+});
+
+if (RsRetry.cdnAvailable === false) {
+    RsRetry.replaceAll();
+}
+```
+
 ### API说明
 
-#### RsRetry.init(config)
-初始化CDN降级处理，需要在页面加载时调用。
-
-```javascript
-RsRetry.Handler.init({
-    cdnDomain: 'mg.127.net',  // CDN域名（必填）
-    fallbackDomain: location.origin,  // 降级域名（必填）
-    testTimeout: 3000,  // CDN测试超时时间（可选，默认3000ms）
-    testImagePath: '/path/to/test/image.png'  // CDN测试图片路径（可选）
-});
-```
-
-#### RsRetry.Handler.test(callback)
-手动测试CDN可用性。
-
-```javascript
-RsRetry.Handler.test((isAvailable) => {
-    if (isAvailable) {
-        console.log('CDN可用');
-    } else {
-        console.log('CDN不可用');
-    }
-});
-```
-
-#### RsRetry.Handler.getConfig()
-获取当前配置（只读）。
-
-```javascript
-const config = RsRetry.Handler.getConfig();
-console.log(config);
-```
+- `RsRetry.init(options)`：初始化并合并配置。
+- `RsRetry.test(callback)`：立即触发一次 CDN 检测。
+- `RsRetry.replaceAll()`：手动触发降级（包括背景图，当配置了 `testImagePath`）。
+- `RsRetry.replaceBackground(element)`：处理指定元素的背景图。
+- `RsRetry.checkElement(element)`：检查并处理元素及其子元素的背景图。
+- `RsRetry.getConfig()`：返回当前配置快照。
+- `RsRetry.config`：配置快照的 getter。
+- `RsRetry.cdnAvailable`：最近一次检测结果（`null/true/false`）。
 
 ### 配置参数说明
 
 #### RsRetryCongfig 接口定义
 
 ```typescript
-interface RsRetryCongfig {
-    cdnDomain: string;      // CDN完整域名带路径前缀（必填）
-    fallbackDomain: string; // 降级域名（必填）
-    testTimeout?: number;   // CDN测试超时时间（可选，默认3000ms）
-    testImagePath?: string; // CDN测试图片路径（可选）
+interface RsRetryConfig {
+    cdnDomain: string;
+    fallbackDomain: string;
+    testTimeout: number;
+    testImagePath?: string; // 提供时自动启用背景图降级
+    enableSentry?: boolean; // 默认 true，可关闭 Sentry 上报
 }
 ```
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 |------|------|------|--------|------|
-| cdnDomain | string | 是 | - | CDN域名，如：'mg.127.net' |
-| fallbackDomain | string | 是 | location.origin | 降级域名，默认为当前域名 |
-| testTimeout | number | 否 | 3000 | CDN可用性测试的超时时间（毫秒） |
-| testImagePath | string | 否 | - | 用于测试CDN可用性的图片路径 |
+| cdnDomain | string | 是 | - | CDN 域名（可包含路径前缀） |
+| fallbackDomain | string | 是 | `location.origin` | 降级目标域名 |
+| testTimeout | number | 否 | 3000 | CDN 可用性检测超时时间（毫秒） |
+| testImagePath | string | 否 | - | 探测图片路径，设置后开启背景图降级 |
+| enableSentry | boolean | 否 | true | 是否启用 Sentry 上报 |
 
 
 ## 注意事项
 
 1. 确保在页面早期初始化RsRetry，以便及时处理资源加载失败的情况。
-2. 对于动态加载的内容，使用`checkElement`方法处理新添加的元素。
-3. 背景图懒加载元素需要添加`bg-lazy`类名。
-4. CDN域名配置需要完整且准确。
-5. 降级域名需要确保能够访问到对应的资源。
+2. 只在需要背景图降级时提供 `testImagePath`，否则不会触发预检测。
+3. 对于动态加载的内容，使用 `checkElement` 方法处理新添加的元素。
+4. 背景图懒加载元素需要添加 `bg-lazy` 类名，且需在 `bg-lazy.js` 中引入本库。
+5. CDN 与主域的资源路径结构需一致，确保降级后地址有效。
 
 ## 开发环境
 

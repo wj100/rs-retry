@@ -5,8 +5,10 @@ interface RsRetryConfig {
     fallbackDomain: string;
     /** CDN 探测超时时间（毫秒） */
     testTimeout: number;
-    /** CDN 探测图片地址 */
-    testImagePath: string;
+    /** CDN 探测图片路径（提供时自动启用背景图降级） */
+    testImagePath?: string;
+    /** 是否启用 Sentry 错误上报（默认 true） */
+    enableSentry?: boolean;
 }
 
 type RsHandleType = "error" | "background";
