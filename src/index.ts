@@ -1,8 +1,16 @@
 import handler from "./cdn-error-handler";
 
-export const init = handler.init;
+const RsRetry: RsRetryPublicAPI = {
+    init: handler.init,
+    test: handler.test,
+    replaceAll: handler.replaceAll,
+    replaceBackground: handler.replaceBackground,
+    checkElement: handler.checkElement,
+    getConfig: handler.getConfig,
+    get config() {
+        return handler.config;
+    },
+};
 
-export const Handler = handler;
-
-export default handler;
+export default RsRetry;
 

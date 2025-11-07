@@ -20,16 +20,15 @@ export default defineConfig({
             entry: resolve(__dirname, 'src/index.ts'),
             name: 'RsRetry', // UMD 全局变量名
             fileName: (format) => {
-                return `rs-retry.${version}.${format}.js`
+                return format === 'es'
+                    ? `rs-retry.${version}.esm.js`
+                    : `rs-retry.${version}.${format}.js`
             },
-            formats: ['umd', 'iife'] // 可以同时生成多种格式
+            formats: ['umd', 'es'] // 输出 UMD 和 ES Module 两种格式
         },
         rollupOptions: {
-            // 确保外部化处理那些你不想打包进库的依赖
             output: {
-                // 在 UMD 构建模式下为这些外部化的依赖提供一个全局变量
-                // UMD 特定配置
-                exports: 'named',
+                exports: 'default',
                 interop: 'auto'
             }
         },
