@@ -174,7 +174,14 @@ publish-online-mimg:
     - if [ ! -d "$APP_NAME" ];then
     - eval $INIT_DEPLOY_DIR_CMD
     - else
-    - cd $APP_NAME && git pull && ls -a
+    - cd $APP_NAME
+    - current_remote=$(git remote get-url origin || echo "")
+    - if [ "$current_remote" != "$RELEASE_GITADDR" ]; then
+    - cd .. && rm -rf $APP_NAME
+    - eval $INIT_DEPLOY_DIR_CMD
+    - else
+    - git pull && ls -a
+    - fi
     - fi
     - rsync -av --exclude '.git' $currentPath/$TARGET_DIR/ ./external/lib/rs-retry
     - git add -A && git commit -m "$commit_msg" && git push origin master
@@ -198,7 +205,14 @@ publish-online-official:
     - if [ ! -d "$APP_NAME" ];then
     - eval $INIT_DEPLOY_OFFICIAL_DIR_CMD
     - else
-    - cd $APP_NAME && git pull && ls -a
+    - cd $APP_NAME
+    - current_remote=$(git remote get-url origin || echo "")
+    - if [ "$current_remote" != "$RELEASE_OFFICAIL_GITADDR" ]; then
+    - cd .. && rm -rf $APP_NAME
+    - eval $INIT_DEPLOY_OFFICIAL_DIR_CMD
+    - else
+    - git pull && ls -a
+    - fi
     - fi
     - rsync -av --exclude '.git' $currentPath/$TARGET_DIR/ ./js/rs-retry
     - git add -A && git commit -m "$commit_msg" && git push origin master
