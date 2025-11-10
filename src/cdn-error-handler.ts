@@ -462,7 +462,6 @@ function testCdnAvailability(callback: (isAvailable: boolean) => void) {
 
         if (timer) clearTimeout(timer);
         cdnAvailable = isAvailable;
-
         console.log(isAvailable ? "✅ CDN 可用" : "❌ CDN 不可用");
         callback(isAvailable);
     }
