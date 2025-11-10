@@ -452,8 +452,6 @@ function testCdnAvailability(callback: (isAvailable: boolean) => void) {
         return;
     }
 
-    console.log("🔍 测试 CDN 可用性...");
-
     const testImg = new Image();
     let timer: ReturnType<typeof setTimeout> | null = null;
     let completed = false;
@@ -623,7 +621,6 @@ function delayedBackgroundCheck() {
     if (!isBackgroundFallbackEnabled()) {
         return;
     }
-    console.log("🔄 延迟检查背景图，确保 CSS 已加载...");
     const allElements = document.querySelectorAll("*");
     let processedCount = 0;
 
@@ -690,35 +687,30 @@ function init(options?: Partial<RsRetryConfig>) {
 
     if (typeof document !== "undefined") {
         function doPreCheck() {
-            console.log("🔍 开始检测 CDN 可用性...");
             testCdnAvailability((isAvailable) => {
                 if (!isAvailable) {
                     executeReplaceAll();
                 } else {
-                    console.log("✅ CDN 可用，无需批量替换");
+                    console.log(config.testImagePath?'✅ 探针检测CDN 可用':'✅ 无探针检测，默认CDN 可用');
                 }
             });
         }
 
         if (document.readyState === "loading") {
             document.addEventListener("DOMContentLoaded", () => {
-                console.log("🔍 页面 DOM 加载完成，开始检测 CDN 可用性...");
                 doPreCheck();
             });
         } else if (document.readyState === "interactive") {
             setTimeout(() => {
-                console.log("🔍 DOM 已解析完成，开始检测 CDN 可用性...");
                 doPreCheck();
             }, 0);
         } else {
-            console.log("🔍 页面已完全加载，开始检测 CDN 可用性...");
             doPreCheck();
         }
 
         if (typeof window !== "undefined" && isBackgroundFallbackEnabled()) {
             window.addEventListener("load", () => {
                 if (cdnAvailable === false) {
-                    console.log("🔄 window.onload 时再次检查背景图...");
                     const allElements = document.querySelectorAll("*");
                     allElements.forEach((element) => {
                         if (element instanceof HTMLElement && !isElementProcessed(element, "background")) {

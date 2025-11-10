@@ -6,7 +6,7 @@ const defaultConfig: RsRetryConfig = {
     fallbackDomain: typeof location !== "undefined" ? location.origin : "",
     testTimeout: 3000,
     testImagePath: undefined,
-    enableSentry: true,
+    enableSentry: false,
 };
 
 export default defaultConfig;
