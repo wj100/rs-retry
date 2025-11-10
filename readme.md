@@ -20,10 +20,10 @@ npm install --save
 
 ### 线上环境
 ```html
-<script src="https://qiye.163.com/js/rs-retry/rs-retry.0.0.1.umd.js"></script>
-<script src="https://mail.qiye.163.com/static/external/lib/rs-retry/rs-retry.0.0.1.umd.js"></script>
+<script src="https://qiye.163.com/js/rs-retry/rs-retry.1.0.0.umd.js"></script>
+<script src="https://mail.qiye.163.com/static/external/lib/rs-retry/rs-retry.1.0.0.umd.js"></script>
 <!-- 开发环境 -->
-<script src="https://maildev.qiye.163.com/static/mimg/external/lib/rs-retry/rs-retry.0.0.1.umd.js"></script>
+<script src="https://maildev.qiye.163.com/static/mimg/external/lib/rs-retry/rs-retry.1.0.0.umd.js"></script>
 ```
 
 ## 使用方法
@@ -85,7 +85,7 @@ interface RsRetryConfig {
     fallbackDomain: string;
     testTimeout: number;
     testImagePath?: string; // 提供时自动启用背景图降级
-    enableSentry?: boolean; // 默认 true，可关闭 Sentry 上报
+    enableSentry?: boolean; // 默认 false，可开启 Sentry 错误上报
 }
 ```
 
@@ -95,7 +95,7 @@ interface RsRetryConfig {
 | fallbackDomain | string | 是 | `location.origin` | 降级目标域名 |
 | testTimeout | number | 否 | 3000 | CDN 可用性检测超时时间（毫秒） |
 | testImagePath | string | 否 | - | 探测图片路径，设置后开启背景图降级 |
-| enableSentry | boolean | 否 | true | 是否启用 Sentry 上报 |
+| enableSentry | boolean | 否 | false | 是否启用 Sentry 上报 |
 
 
 ## 注意事项
