@@ -77,7 +77,7 @@ deploy-test-2:
   - qiye-test-2-hz
   environment:
     name: test
-  when: manual
+  when: on_success
   only:
   - dev
   - master
