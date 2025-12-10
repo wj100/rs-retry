@@ -13,7 +13,7 @@ RsRetry 是一个专门用于处理CDN资源加载失败时自动降级到主域
 ## 安装
 
 ```html
-<script src="https://mail.qiye.163.com/static/external/lib/rs-retry/rs-retry.1.0.0.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/rs-retry@1.0.0/dist/rs-retry.1.0.0.umd.js"></script>
 ```
 
 ## 使用方法

@@ -1,13 +1,29 @@
 {
-  "name": "qiye-resource-retry",
-  "private": true,
+  "name": "rs-retry",
   "version": "1.0.0",
+  "description": "CDN resource auto fallback helper (UMD + ESM)",
   "type": "module",
+  "main": "dist/rs-retry.1.0.0.umd.js",
+  "module": "dist/rs-retry.1.0.0.esm.js",
+  "types": "src/type.d.ts",
+  "files": [
+    "dist",
+    "src/type.d.ts",
+    "readme.md"
+  ],
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "prepare": "npm run build"
   },
+  "keywords": [
+    "cdn",
+    "fallback",
+    "retry",
+    "resource"
+  ],
+  "license": "MIT",
   "devDependencies": {
     "@types/node": "^24.10.0",
     "terser": "^5.44.1",
