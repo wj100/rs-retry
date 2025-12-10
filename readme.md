@@ -12,8 +12,11 @@ RsRetry 是一个专门用于处理CDN资源加载失败时自动降级到主域
 
 ## 安装
 
+```
+npm i rs-retry
+```
 ```html
-<script src="https://cdn.jsdelivr.net/npm/rs-retry@1.0.0/dist/rs-retry.1.0.0.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/rs-retry@1.0.1/dist/rs-retry.1.0.1.umd.js"></script>
 ```
 
 ## 使用方法
@@ -21,10 +24,10 @@ RsRetry 是一个专门用于处理CDN资源加载失败时自动降级到主域
 ### 基础用法
 
 ```html
-<script src="https://chose.your.url/rs-retry.0.0.1.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/rs-retry@1.0.1/dist/rs-retry.1.0.1.umd.js"></script>
 <script>
     RsRetry.init({
-        cdnDomain: 'mg.127.net/static/qiye-official',
+        cdnDomain: 'cdn.jsdelivr.net/static/official',//cdn 域名 ，可加 path
         fallbackDomain: location.origin,
         testTimeout: 3000,
         // 需要背景图降级时提供测试图片路径
@@ -45,7 +48,7 @@ RsRetry 是一个专门用于处理CDN资源加载失败时自动降级到主域
 import RsRetry from 'rs-retry';
 
 RsRetry.init({
-    cdnDomain: 'mg.127.net/static/qiye-official',
+    cdnDomain: '',
 });
 
 ```

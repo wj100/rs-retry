@@ -1,10 +1,10 @@
 {
   "name": "rs-retry",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "CDN resource auto fallback helper (UMD + ESM)",
   "type": "module",
-  "main": "dist/rs-retry.1.0.0.umd.js",
-  "module": "dist/rs-retry.1.0.0.esm.js",
+  "main": "dist/rs-retry.1.0.1.umd.js",
+  "module": "dist/rs-retry.1.0.1.esm.js",
   "types": "src/type.d.ts",
   "files": [
     "dist",
